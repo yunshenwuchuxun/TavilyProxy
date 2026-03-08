@@ -2,7 +2,19 @@
 
 简体中文 | [English](./README_EN.md)
 
+> 以下链接默认使用仓库路径 `yunshenwuchuxun/TavilyProxy`。如果你最终发布时使用了不同仓库名，请一并替换下方链接。
+
+[![Build](https://github.com/yunshenwuchuxun/TavilyProxy/actions/workflows/build-multi-platform.yml/badge.svg)](https://github.com/yunshenwuchuxun/TavilyProxy/actions/workflows/build-multi-platform.yml)
+[![Docker Publish](https://github.com/yunshenwuchuxun/TavilyProxy/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/yunshenwuchuxun/TavilyProxy/actions/workflows/docker-publish.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Render Blueprint](https://img.shields.io/badge/Render-Blueprint-46E3B7?logo=render&logoColor=black)](./render.yaml)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/yunshenwuchuxun/TavilyProxy)
+
 一个透明的 Tavily API 反向代理：将多个 Tavily API Key（额度/credits）汇聚在一个 **Master Key** 之后，并提供内置 Web UI 用于管理 Key、用量与请求日志。
+
+参考项目：`xuncv/TavilyProxyManager`：<https://github.com/xuncv/TavilyProxyManager>
 
 ---
 
@@ -75,11 +87,34 @@ docker run -d \
   ghcr.io/xuncv/tavilyproxymanager:latest
 ```
 
+### 3. 使用 Render Blueprint（一键部署）
+
+仓库根目录已提供 `render.yaml`，推送到 GitHub 后即可直接在 Render 中按 Blueprint 部署。
+
+1. 将仓库推送到 GitHub（建议使用公开仓库，或给 Render GitHub App 授权私有仓库访问）。
+2. 打开 Render 控制台，选择 **New > Blueprint**。
+3. 选择你的仓库并批准 `render.yaml` 中的服务配置。
+4. 首次创建时，Render 会提示填写 `ADMIN_PASSWORD`；`ADMIN_USERNAME` 默认为 `admin`。
+5. 部署完成后，访问 Render 分配的 `onrender.com` 地址。
+
+Render 部署说明：
+
+- `DATABASE_PATH` 会写入 `/var/data/proxy.db`，并通过 Persistent Disk 持久化。
+- 由于项目当前使用 SQLite，Render 上必须挂载 Persistent Disk；没有磁盘时，重启或重新部署会丢失数据。
+- Render 的 Persistent Disk 仅适用于付费 Web Service，因此 `render.yaml` 默认使用 `starter` 计划。
+- `render.yaml` 将 `autoDeployTrigger` 设为 `off`，更适合 README 中的“一键部署”场景，避免你后续 push 代码时把所有通过按钮创建的实例都自动重部署。如果你部署的是自己的 fork，可在 Render 面板中改为 `On Commit`。
+
+如果你之后修改了仓库名，请同步替换 Deploy to Render 按钮中的仓库地址：
+
+```md
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/yunshenwuchuxun/TavilyProxy)
+```
+
 ---
 
 ## 🔑 首次运行：获取 Master Key
 
-服务在**首次启动**时会自动生成一个随机的 **Master Key**，用于后续登录管理面板和调用 API。
+服务在**首次启动**时会自动生成一个随机的 **Master Key**，它用于后续代理 REST API 和 MCP 调用。管理面板登录使用另一套管理员用户名和密码。
 
 您可以通过以下命令查看控制台日志来获取它：
 
@@ -88,9 +123,13 @@ docker logs tavily-proxy 2>&1 | grep "master key"
 ```
 
 **日志示例：**
-`level=INFO msg="no master key found, generated a new one" key=your_generated_master_key_here`
+`time=2026-03-08T15:16:50.725+08:00 level=INFO msg="generated master key" master_key=your_generated_master_key_here`
 
-> **提示**：建议首次登录后在管理面板或通过数据库备份妥善保存此 Key。
+对于全新的本地手动启动，如果您没有在首次启动前设置 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD`，管理面板默认账号密码为 `admin` / `admin`。
+
+管理员凭据会在初始化后持久化到数据库中，因此后续再修改这些环境变量，并不会覆盖已有数据库里的登录信息。
+
+> **提示**：请将 Master Key 用于 API 客户端调用，并将管理员用户名/密码单独保存用于管理面板登录。
 
 ---
 
@@ -106,6 +145,15 @@ docker logs tavily-proxy 2>&1 | grep "master key"
     ```bash
     cd web && npm install && npm run dev
     ```
+
+默认情况下，从仓库根目录执行 `go run ./server` 会把数据写入 `server/data/app.db`。
+Docker 示例则使用挂载到 `/app/data/proxy.db` 的 `./data`，因此本地手动运行和 Docker 运行默认不会共享同一套凭据，除非您显式指定同一个数据库文件。
+
+如果你想在本地模拟 Render 的数据目录，可以显式指定：
+
+```bash
+DATABASE_PATH=./data/proxy.db go run ./server
+```
 
 **手动编译二进制产物**:
 
@@ -170,15 +218,22 @@ curl -X POST "http://localhost:8080/search" \
 
 | 变量名             | 说明                 | 默认值                   |
 | :----------------- | :------------------- | :----------------------- |
-| `LISTEN_ADDR`      | 服务监听地址         | `:8080`                  |
-| `DATABASE_PATH`    | SQLite 数据库路径    | `/app/data/proxy.db`     |
+| `LISTEN_ADDR`      | 服务监听地址         | 空；未设置时回退到 `PORT` |
+| `PORT`             | 监听端口（Render 会自动注入） | `8080`          |
+| `DATABASE_PATH`    | SQLite 数据库路径    | `./server/data/app.db`（源码运行） |
 | `TAVILY_BASE_URL`  | 上游 Tavily API 地址 | `https://api.tavily.com` |
 | `UPSTREAM_TIMEOUT` | 上游请求超时时间     | `150s`                   |
 | `MCP_STATELESS`    | MCP 是否无状态模式   | `true`                   |
 | `MCP_SESSION_TTL`  | MCP 会话空闲超时     | `10m`                    |
+| `ADMIN_USERNAME`   | 管理面板用户名       | `admin`                  |
+| `ADMIN_PASSWORD`   | 管理面板密码         | `admin`（建议生产环境覆盖） |
+| `ADMIN_SESSION_TTL`| 管理员会话有效期     | `24h`                    |
+| `LOG_LEVEL`        | 日志级别             | `info`                   |
+
+> Docker 镜像默认会将 `DATABASE_PATH` 设置为 `/app/data/proxy.db`；Render Blueprint 会将其设置为 `/var/data/proxy.db`。
 
 ---
 
 ## 📄 开源协议
 
-本项目基于 MIT 协议开源。
+本项目基于 MIT 协议开源，完整文本见 `LICENSE`。

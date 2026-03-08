@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <n-space vertical size="large">
     <div class="page-header">
       <div class="header-info">
@@ -19,32 +19,58 @@
             <n-alert type="warning" :show-icon="true" size="small">
               {{ t("settings.masterAuth.alert") }}
             </n-alert>
-            <div>
-              <div class="field-label">{{ t("settings.masterAuth.currentKey") }}</div>
-              <n-input-group>
+
+            <n-form :model="authSettings" label-placement="top" size="medium">
+              <n-form-item :label="t('settings.masterAuth.currentKey')">
+                <n-input-group>
+                  <n-input
+                    v-model:value="authSettings.master_key"
+                    type="password"
+                    show-password-on="mousedown"
+                    :placeholder="t('settings.masterAuth.noKey')"
+                  />
+                  <n-button
+                    type="primary"
+                    ghost
+                    @click="copy"
+                    :disabled="!authSettings.master_key"
+                  >
+                    <template #icon><n-icon :component="CopyOutline" /></template>
+                  </n-button>
+                </n-input-group>
+              </n-form-item>
+
+              <n-form-item :label="adminUsernameLabel">
                 <n-input
-                  :value="masterKey"
-                  readonly
+                  v-model:value="authSettings.admin_username"
+                  :placeholder="adminUsernamePlaceholder"
+                />
+              </n-form-item>
+
+              <n-form-item :label="adminPasswordLabel">
+                <n-input
+                  v-model:value="authSettings.admin_password"
                   type="password"
                   show-password-on="mousedown"
-                  :placeholder="t('settings.masterAuth.noKey')"
+                  :placeholder="adminPasswordPlaceholder"
                 />
-                <n-button
-                  type="primary"
-                  ghost
-                  @click="copy"
-                  :disabled="!masterKey"
-                >
-                  <template #icon><n-icon :component="CopyOutline" /></template>
-                </n-button>
-              </n-input-group>
-            </div>
+              </n-form-item>
+            </n-form>
+
+            <n-button
+              type="primary"
+              block
+              :loading="savingAuth"
+              :disabled="!canSaveAuth"
+              @click="saveAuthSettings"
+            >
+              {{ authSaveButtonLabel }}
+            </n-button>
+
             <n-popconfirm @positive-click="resetKey">
               <template #trigger>
                 <n-button block type="error" secondary>
-                  <template #icon
-                    ><n-icon :component="RefreshOutline"
-                  /></template>
+                  <template #icon><n-icon :component="RefreshOutline" /></template>
                   {{ t("settings.masterAuth.reset") }}
                 </n-button>
               </template>
@@ -264,7 +290,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import {
   NAlert,
   NButton,
@@ -290,15 +316,25 @@ import {
   SyncOutline,
   TrashOutline,
 } from "@vicons/ionicons5";
-import { api, setMasterKey as storeMasterKey } from "../api/client";
+import { api } from "../api/client";
 import { writeClipboardText } from "../utils/clipboard";
 import { locale, t } from "../i18n";
 
 const message = useMessage();
-const masterKey = ref("");
+const savingAuth = ref(false);
 const savingAutoSync = ref(false);
 const savingLogCleanup = ref(false);
 const savingCache = ref(false);
+
+const authSettings = ref<{
+  master_key: string;
+  admin_username: string;
+  admin_password: string;
+}>({
+  master_key: "",
+  admin_username: "admin",
+  admin_password: "",
+});
 
 const cacheSettings = ref<{
   enabled: boolean;
@@ -346,6 +382,19 @@ const logCleanup = ref<{
   last_error: "",
 });
 
+const adminUsernameLabel = computed(() => "Admin Username");
+const adminUsernamePlaceholder = computed(() => "Enter admin username");
+const adminPasswordLabel = computed(() => "Admin Password");
+const adminPasswordPlaceholder = computed(
+  () => "Leave empty to keep current password"
+);
+const authSaveButtonLabel = computed(() => "Save Authentication Settings");
+const canSaveAuth = computed(
+  () =>
+    authSettings.value.master_key.trim() !== "" &&
+    authSettings.value.admin_username.trim() !== ""
+);
+
 function formatDate(dateStr: string) {
   const date = new Date(dateStr);
   return date.toLocaleString(locale.value);
@@ -363,14 +412,52 @@ function normalizeAutoSyncRequestIntervalSeconds(value: unknown): number {
   return Math.min(60, Math.max(0, Math.floor(parsed)));
 }
 
-async function load() {
+async function loadAuthSettings() {
   try {
-    const { data } = await api.get<{ master_key: string }>(
-      "/api/settings/master-key"
+    const { data } = await api.get<{ master_key: string; admin_username: string }>(
+      "/api/settings/auth"
     );
-    masterKey.value = data.master_key;
+    authSettings.value = {
+      master_key: data.master_key ?? "",
+      admin_username: data.admin_username ?? "admin",
+      admin_password: "",
+    };
   } catch (err: any) {
     message.error(err?.response?.data?.error ?? t("settings.errors.loadMasterKey"));
+  }
+}
+
+async function saveAuthSettings() {
+  if (!canSaveAuth.value) {
+    return;
+  }
+
+  savingAuth.value = true;
+  try {
+    const normalizedMasterKey = authSettings.value.master_key.trim();
+    const normalizedUsername = authSettings.value.admin_username.trim();
+
+    const payload: {
+      master_key: string;
+      admin_username: string;
+      admin_password?: string;
+    } = {
+      master_key: normalizedMasterKey,
+      admin_username: normalizedUsername,
+    };
+    if (authSettings.value.admin_password.trim() !== "") {
+      payload.admin_password = authSettings.value.admin_password;
+    }
+
+    await api.put("/api/settings/auth", payload);
+    authSettings.value.master_key = normalizedMasterKey;
+    authSettings.value.admin_username = normalizedUsername;
+    authSettings.value.admin_password = "";
+    message.success(t("settings.messages.updated"));
+  } catch (err: any) {
+    message.error(err?.response?.data?.error ?? t("common.saveFailed"));
+  } finally {
+    savingAuth.value = false;
   }
 }
 
@@ -518,7 +605,7 @@ function formatBytes(bytes: number): string {
 
 async function copy() {
   try {
-    await writeClipboardText(masterKey.value);
+    await writeClipboardText(authSettings.value.master_key);
     message.success(t("common.copiedToClipboard"));
   } catch {
     message.error(t("common.copyFailed"));
@@ -530,8 +617,7 @@ async function resetKey() {
     const { data } = await api.post<{ master_key: string }>(
       "/api/settings/master-key/reset"
     );
-    masterKey.value = data.master_key;
-    storeMasterKey(masterKey.value);
+    authSettings.value.master_key = data.master_key;
     message.success(t("settings.messages.masterKeyReset"));
   } catch (err: any) {
     message.error(err?.response?.data?.error ?? t("common.resetFailed"));
@@ -539,7 +625,7 @@ async function resetKey() {
 }
 
 onMounted(async () => {
-  await load();
+  await loadAuthSettings();
   await loadAutoSync();
   await loadLogCleanup();
   await loadCache();
@@ -571,13 +657,6 @@ onMounted(async () => {
 .settings-card {
   border-radius: 12px;
   height: 100%;
-}
-
-.field-label {
-  font-size: 14px;
-  font-weight: 500;
-  margin-bottom: 8px;
-  color: #666;
 }
 
 .sync-stats {

@@ -53,6 +53,7 @@ func main() {
 		slogLogger.Error("db open failed", "err", err)
 		os.Exit(1)
 	}
+	settingsService := services.NewSettingsService(database)
 
 	masterKeyService := services.NewMasterKeyService(database, slogLogger)
 	if err := masterKeyService.LoadOrCreate(context.Background()); err != nil {
@@ -60,7 +61,47 @@ func main() {
 		os.Exit(1)
 	}
 
-	settingsService := services.NewSettingsService(database)
+	initCtx := context.Background()
+	adminUsername := strings.TrimSpace(cfg.AdminUsername)
+	if persistedUsername, ok, err := settingsService.Get(initCtx, services.SettingAdminUsername); err != nil {
+		slogLogger.Error("load admin username from settings failed", "err", err)
+		os.Exit(1)
+	} else if ok && strings.TrimSpace(persistedUsername) != "" {
+		adminUsername = strings.TrimSpace(persistedUsername)
+	}
+
+	var adminAuthService *services.AdminAuthService
+	if persistedPasswordHash, ok, err := settingsService.Get(initCtx, services.SettingAdminPasswordHash); err != nil {
+		slogLogger.Error("load admin password hash from settings failed", "err", err)
+		os.Exit(1)
+	} else if ok && strings.TrimSpace(persistedPasswordHash) != "" {
+		adminAuthService, err = services.NewAdminAuthServiceWithPasswordHash(adminUsername, strings.TrimSpace(persistedPasswordHash), cfg.AdminSessionTTL)
+		if err != nil {
+			slogLogger.Warn("invalid persisted admin credentials, falling back to environment defaults", "err", err)
+		}
+	}
+
+	if adminAuthService == nil {
+		adminPassword := strings.TrimSpace(cfg.AdminPassword)
+		if adminPassword == "" {
+			adminPassword = "admin"
+			slogLogger.Warn("ADMIN_PASSWORD is empty, falling back to default admin password; set ADMIN_PASSWORD in production")
+		}
+
+		adminAuthService, err = services.NewAdminAuthService(adminUsername, adminPassword, cfg.AdminSessionTTL)
+		if err != nil {
+			slogLogger.Error("admin auth init failed", "err", err)
+			os.Exit(1)
+		}
+	}
+
+	if err := settingsService.Set(initCtx, services.SettingAdminUsername, adminAuthService.CurrentUsername()); err != nil {
+		slogLogger.Warn("persist admin username failed", "err", err)
+	}
+	if err := settingsService.Set(initCtx, services.SettingAdminPasswordHash, adminAuthService.PasswordHashHex()); err != nil {
+		slogLogger.Warn("persist admin password hash failed", "err", err)
+	}
+
 	keyService := services.NewKeyService(database, slogLogger)
 	logService := services.NewLogService(database, slogLogger)
 	statsService := services.NewStatsService(database)
@@ -80,6 +121,7 @@ func main() {
 		Config:           cfg,
 		EmbeddedPublic:   embeddedPublic,
 		MasterKeyService: masterKeyService,
+		AdminAuthService: adminAuthService,
 		SettingsService:  settingsService,
 		KeyService:       keyService,
 		QuotaSyncService: quotaSyncService,

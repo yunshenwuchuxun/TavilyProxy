@@ -9,6 +9,9 @@ const (
 	SettingAutoSyncLastSuccessAt          = "auto_sync_last_success_at"
 	SettingAutoSyncLastError              = "auto_sync_last_error"
 
+	SettingAdminUsername     = "admin_username"
+	SettingAdminPasswordHash = "admin_password_hash"
+
 	SettingRequestLoggingEnabled = "request_logging_enabled"
 
 	SettingLogRetentionDays    = "log_retention_days"

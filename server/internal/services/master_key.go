@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"tavily-proxy/server/internal/models"
@@ -15,6 +16,8 @@ import (
 )
 
 const masterKeySettingKey = "master_key"
+
+var ErrMasterKeyRequired = errors.New("master key is required")
 
 type MasterKeyService struct {
 	db     *gorm.DB
@@ -79,6 +82,21 @@ func (s *MasterKeyService) Reset(ctx context.Context) (string, error) {
 	s.key = newKey
 	s.mu.Unlock()
 	return newKey, nil
+}
+
+func (s *MasterKeyService) Set(ctx context.Context, key string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ErrMasterKeyRequired
+	}
+	if err := s.db.WithContext(ctx).Save(&models.Setting{Key: masterKeySettingKey, Value: key}).Error; err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.key = key
+	s.mu.Unlock()
+	return nil
 }
 
 func generateSecret(bytes int) (string, error) {

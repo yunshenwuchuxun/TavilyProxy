@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <n-config-provider
     :theme="theme"
     :theme-overrides="currentOverrides"
@@ -80,10 +80,11 @@
       </n-layout>
 
       <MasterKeyModal
-        :show="needsKey"
-        :initial-value="draftKey"
+        :show="needsAuth"
+        :initial-username="draftUsername"
         :error="authError"
-        @submit="saveKey"
+        :loading="loggingIn"
+        @submit="login"
       />
     </n-message-provider>
   </n-config-provider>
@@ -127,7 +128,7 @@ import DashboardView from "./views/DashboardView.vue";
 import KeyManagementView from "./views/KeyManagementView.vue";
 import LogsView from "./views/LogsView.vue";
 import SettingsView from "./views/SettingsView.vue";
-import { api, clearMasterKey, getMasterKey, setMasterKey } from "./api/client";
+import { api, clearAuthToken, getAuthToken, setAuthToken } from "./api/client";
 import { locale, setLocale, t } from "./i18n";
 
 const active = ref<"dashboard" | "keys" | "logs" | "settings">("dashboard");
@@ -228,37 +229,41 @@ function onSelectLanguage(key: string | number) {
   }
 }
 
-const draftKey = ref("");
-const needsKey = computed(() => !getMasterKey());
+const draftUsername = ref("admin");
+const needsAuth = computed(() => !getAuthToken());
 const authError = ref("");
+const loggingIn = ref(false);
 const dashboardRefreshNonce = ref(0);
 
-async function verifyKey() {
-  try {
-    await api.get("/api/stats");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function saveKey(value: string) {
+async function login(credentials: { username: string; password: string }) {
   authError.value = "";
-  setMasterKey(value);
-  const ok = await verifyKey();
-  if (!ok) {
-    clearMasterKey();
-    draftKey.value = value;
-    authError.value = t("app.invalidMasterKey");
-  } else {
-    draftKey.value = "";
+  loggingIn.value = true;
+  try {
+    const { data } = await api.post<{ token: string }>("/api/auth/login", {
+      username: credentials.username,
+      password: credentials.password,
+    });
+    if (!data?.token) {
+      throw new Error("missing_token");
+    }
+    setAuthToken(data.token);
+    draftUsername.value = credentials.username;
     dashboardRefreshNonce.value += 1;
+  } catch {
+    clearAuthToken();
+    authError.value = t("auth.invalidCredentials");
+  } finally {
+    loggingIn.value = false;
   }
 }
 
-function logout() {
-  clearMasterKey();
-  draftKey.value = "";
+async function logout() {
+  try {
+    await api.post("/api/auth/logout");
+  } catch {
+    // Ignore logout failures and clear local session state anyway.
+  }
+  clearAuthToken();
   authError.value = "";
 }
 
@@ -274,9 +279,7 @@ onMounted(() => {
   }
 
   window.addEventListener("auth-required", () => {
-    const current = getMasterKey();
-    clearMasterKey();
-    draftKey.value = current;
+    clearAuthToken();
     authError.value = "";
   });
 });
@@ -349,3 +352,5 @@ onMounted(() => {
   background-color: transparent;
 }
 </style>
+
+

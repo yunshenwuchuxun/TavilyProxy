@@ -1,28 +1,28 @@
 import axios from 'axios'
 import { ref } from 'vue'
 
-const STORAGE_KEY = 'tavily_proxy_master_key'
+const STORAGE_KEY = 'tavily_proxy_admin_token'
 
-const masterKeyRef = ref<string>(localStorage.getItem(STORAGE_KEY) ?? '')
+const authTokenRef = ref<string>(localStorage.getItem(STORAGE_KEY) ?? '')
 
-export function getMasterKey(): string {
-  return masterKeyRef.value
+export function getAuthToken(): string {
+  return authTokenRef.value
 }
 
-export function setMasterKey(value: string): void {
+export function setAuthToken(value: string): void {
   localStorage.setItem(STORAGE_KEY, value)
-  masterKeyRef.value = value
+  authTokenRef.value = value
 }
 
-export function clearMasterKey(): void {
+export function clearAuthToken(): void {
   localStorage.removeItem(STORAGE_KEY)
-  masterKeyRef.value = ''
+  authTokenRef.value = ''
 }
 
 export const api = axios.create()
 
 api.interceptors.request.use((config) => {
-  const token = getMasterKey()
+  const token = getAuthToken()
   if (token) {
     config.headers = config.headers ?? {}
     config.headers.Authorization = `Bearer ${token}`
@@ -34,7 +34,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) {
-      clearMasterKey()
+      clearAuthToken()
       window.dispatchEvent(new Event('auth-required'))
     }
     return Promise.reject(error)

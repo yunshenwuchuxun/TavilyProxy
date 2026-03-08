@@ -5,5 +5,7 @@ web/node_modules/
 web/.vite/
 build/
 data/
+.idea/
+tavily-proxy-linux
 *.exe
 *.db

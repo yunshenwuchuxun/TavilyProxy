@@ -14,6 +14,7 @@ type Dependencies struct {
 	Config           config.Config
 	EmbeddedPublic   embed.FS
 	MasterKeyService *services.MasterKeyService
+	AdminAuthService *services.AdminAuthService
 	SettingsService  *services.SettingsService
 	KeyService       *services.KeyService
 	QuotaSyncService *services.QuotaSyncService

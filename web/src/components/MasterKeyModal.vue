@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <n-modal
     :show="show"
     preset="card"
@@ -15,7 +15,7 @@
             <template #icon>
               <n-icon :component="LanguageOutline" />
             </template>
-            {{ locale === "zh-CN" ? "中文" : "EN" }}
+            {{ locale === "zh-CN" ? "CN" : "EN" }}
           </n-button>
         </n-dropdown>
       </div>
@@ -23,7 +23,7 @@
         <n-icon size="48" :component="LockClosedOutline" class="auth-icon" />
         <div class="auth-title">{{ t("auth.welcome") }}</div>
         <div class="auth-subtitle">
-          {{ t("auth.subtitle") }}
+          {{ authSubtitle }}
         </div>
       </div>
 
@@ -31,15 +31,28 @@
         {{ error }}
       </n-alert>
 
-      <n-form-item :label="t('auth.masterKeyLabel')" label-placement="top">
+      <n-form-item :label="usernameLabel" label-placement="top">
         <n-input
-          v-model:value="value"
-          type="password"
-          :placeholder="t('auth.masterKeyPlaceholder')"
-          show-password-on="mousedown"
+          v-model:value="username"
+          :placeholder="usernamePlaceholder"
           size="large"
           @keyup.enter="onSubmit"
           autofocus
+        >
+          <template #prefix>
+            <n-icon :component="PersonOutline" />
+          </template>
+        </n-input>
+      </n-form-item>
+
+      <n-form-item :label="passwordLabel" label-placement="top">
+        <n-input
+          v-model:value="password"
+          type="password"
+          :placeholder="passwordPlaceholder"
+          show-password-on="mousedown"
+          size="large"
+          @keyup.enter="onSubmit"
         >
           <template #prefix>
             <n-icon :component="KeyOutline" />
@@ -51,21 +64,22 @@
         type="primary"
         size="large"
         block
-        :disabled="!value.trim()"
+        :loading="loading"
+        :disabled="!username.trim() || !password.trim()"
         @click="onSubmit"
       >
         {{ t("auth.accessDashboard") }}
       </n-button>
 
       <div class="auth-footer">
-        {{ t("auth.footer") }}
+        {{ authFooter }}
       </div>
     </n-space>
   </n-modal>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import {
   NAlert,
   NButton,
@@ -76,24 +90,38 @@ import {
   NModal,
   NSpace,
 } from "naive-ui";
-import { KeyOutline, LanguageOutline, LockClosedOutline } from "@vicons/ionicons5";
+import {
+  KeyOutline,
+  LanguageOutline,
+  LockClosedOutline,
+  PersonOutline,
+} from "@vicons/ionicons5";
 import { locale, setLocale, t } from "../i18n";
 
 const props = defineProps<{
   show: boolean;
-  initialValue?: string;
+  initialUsername?: string;
   error?: string;
+  loading?: boolean;
 }>();
 
 const emit = defineEmits<{
-  (e: "submit", value: string): void;
+  (e: "submit", payload: { username: string; password: string }): void;
 }>();
 
-const value = ref(props.initialValue ?? "");
+const username = ref(props.initialUsername ?? "admin");
+const password = ref("");
+
+const usernameLabel = computed(() => t("auth.usernameLabel"));
+const usernamePlaceholder = computed(() => t("auth.usernamePlaceholder"));
+const passwordLabel = computed(() => t("auth.passwordLabel"));
+const passwordPlaceholder = computed(() => t("auth.passwordPlaceholder"));
+const authSubtitle = computed(() => t("auth.subtitle"));
+const authFooter = computed(() => t("auth.footer"));
 
 const languageOptions = [
   { label: "English", key: "en" },
-  { label: "中文", key: "zh-CN" },
+  { label: "Chinese", key: "zh-CN" },
 ];
 
 function onSelectLanguage(key: string | number) {
@@ -103,15 +131,27 @@ function onSelectLanguage(key: string | number) {
 }
 
 watch(
-  () => props.initialValue,
+  () => props.initialUsername,
   (v) => {
-    if (typeof v === "string") value.value = v;
+    if (typeof v === "string") username.value = v;
+  }
+);
+
+watch(
+  () => props.show,
+  (show) => {
+    if (show) {
+      password.value = "";
+    }
   }
 );
 
 function onSubmit() {
-  if (!value.value.trim()) return;
-  emit("submit", value.value.trim());
+  if (!username.value.trim() || !password.value.trim()) return;
+  emit("submit", {
+    username: username.value.trim(),
+    password: password.value,
+  });
 }
 </script>
 

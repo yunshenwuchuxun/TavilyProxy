@@ -38,28 +38,40 @@ func NewRouter(deps Dependencies) http.Handler {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
-	api := r.Group("/api", masterAuthMiddleware(deps.MasterKeyService))
+	api := r.Group("/api")
+	api.POST("/auth/login", func(c *gin.Context) { handleAdminLogin(c, deps.AdminAuthService) })
+
+	protectedAPI := api.Group("", managementAuthMiddleware(deps.AdminAuthService, deps.MasterKeyService))
 	{
-		api.GET("/keys", func(c *gin.Context) { handleListKeys(c, deps.KeyService) })
-		api.POST("/keys", func(c *gin.Context) { handleCreateKey(c, deps.KeyService) })
-		api.GET("/keys/export", func(c *gin.Context) { handleExportKeys(c, deps.KeyService) })
-		api.GET("/keys/:id/raw", func(c *gin.Context) { handleGetKeyRaw(c, deps.KeyService, c.Param("id")) })
-		api.GET("/keys/sync", func(c *gin.Context) { handleGetSyncAllKeys(c, deps.QuotaSyncJob) })
-		api.POST("/keys/sync", func(c *gin.Context) { handleStartSyncAllKeys(c, deps.QuotaSyncJob) })
-		api.DELETE("/keys/invalid", func(c *gin.Context) { handleDeleteInvalidKeys(c, deps.KeyService) })
-		api.PUT("/keys/:id", func(c *gin.Context) { handleUpdateKey(c, deps, c.Param("id")) })
-		api.DELETE("/keys/:id", func(c *gin.Context) { handleDeleteKey(c, deps.KeyService, c.Param("id")) })
+		protectedAPI.POST("/auth/logout", func(c *gin.Context) { handleAdminLogout(c, deps.AdminAuthService) })
 
-		api.GET("/logs/status-codes", func(c *gin.Context) { handleLogStatusCodes(c, deps.LogService) })
-		api.GET("/logs", func(c *gin.Context) { handleListLogs(c, deps.LogService) })
-		api.DELETE("/logs", func(c *gin.Context) { handleClearLogs(c, deps.LogService) })
-		api.GET("/stats", func(c *gin.Context) { handleStats(c, deps.StatsService) })
-		api.GET("/stats/timeseries", func(c *gin.Context) { handleTimeSeries(c, deps.StatsService) })
+		protectedAPI.GET("/settings/auth", func(c *gin.Context) {
+			handleGetAuthSettings(c, deps.MasterKeyService, deps.AdminAuthService)
+		})
+		protectedAPI.PUT("/settings/auth", func(c *gin.Context) {
+			handleSetAuthSettings(c, deps.MasterKeyService, deps.AdminAuthService, deps.SettingsService)
+		})
 
-		api.GET("/settings/master-key", func(c *gin.Context) {
+		protectedAPI.GET("/keys", func(c *gin.Context) { handleListKeys(c, deps.KeyService) })
+		protectedAPI.POST("/keys", func(c *gin.Context) { handleCreateKey(c, deps.KeyService) })
+		protectedAPI.GET("/keys/export", func(c *gin.Context) { handleExportKeys(c, deps.KeyService) })
+		protectedAPI.GET("/keys/:id/raw", func(c *gin.Context) { handleGetKeyRaw(c, deps.KeyService, c.Param("id")) })
+		protectedAPI.GET("/keys/sync", func(c *gin.Context) { handleGetSyncAllKeys(c, deps.QuotaSyncJob) })
+		protectedAPI.POST("/keys/sync", func(c *gin.Context) { handleStartSyncAllKeys(c, deps.QuotaSyncJob) })
+		protectedAPI.DELETE("/keys/invalid", func(c *gin.Context) { handleDeleteInvalidKeys(c, deps.KeyService) })
+		protectedAPI.PUT("/keys/:id", func(c *gin.Context) { handleUpdateKey(c, deps, c.Param("id")) })
+		protectedAPI.DELETE("/keys/:id", func(c *gin.Context) { handleDeleteKey(c, deps.KeyService, c.Param("id")) })
+
+		protectedAPI.GET("/logs/status-codes", func(c *gin.Context) { handleLogStatusCodes(c, deps.LogService) })
+		protectedAPI.GET("/logs", func(c *gin.Context) { handleListLogs(c, deps.LogService) })
+		protectedAPI.DELETE("/logs", func(c *gin.Context) { handleClearLogs(c, deps.LogService) })
+		protectedAPI.GET("/stats", func(c *gin.Context) { handleStats(c, deps.StatsService) })
+		protectedAPI.GET("/stats/timeseries", func(c *gin.Context) { handleTimeSeries(c, deps.StatsService) })
+
+		protectedAPI.GET("/settings/master-key", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"master_key": deps.MasterKeyService.Get()})
 		})
-		api.POST("/settings/master-key/reset", func(c *gin.Context) {
+		protectedAPI.POST("/settings/master-key/reset", func(c *gin.Context) {
 			newKey, err := deps.MasterKeyService.Reset(c.Request.Context())
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "reset_failed"})
@@ -68,15 +80,15 @@ func NewRouter(deps Dependencies) http.Handler {
 			c.JSON(http.StatusOK, gin.H{"master_key": newKey})
 		})
 
-		api.GET("/settings/auto-sync", func(c *gin.Context) { handleGetAutoSync(c, deps.SettingsService) })
-		api.PUT("/settings/auto-sync", func(c *gin.Context) { handleSetAutoSync(c, deps.SettingsService) })
-		api.GET("/settings/log-cleanup", func(c *gin.Context) { handleGetLogCleanup(c, deps.SettingsService) })
-		api.PUT("/settings/log-cleanup", func(c *gin.Context) { handleSetLogCleanup(c, deps.SettingsService) })
+		protectedAPI.GET("/settings/auto-sync", func(c *gin.Context) { handleGetAutoSync(c, deps.SettingsService) })
+		protectedAPI.PUT("/settings/auto-sync", func(c *gin.Context) { handleSetAutoSync(c, deps.SettingsService) })
+		protectedAPI.GET("/settings/log-cleanup", func(c *gin.Context) { handleGetLogCleanup(c, deps.SettingsService) })
+		protectedAPI.PUT("/settings/log-cleanup", func(c *gin.Context) { handleSetLogCleanup(c, deps.SettingsService) })
 
-		api.GET("/settings/cache", func(c *gin.Context) { handleGetCache(c, deps.SettingsService) })
-		api.PUT("/settings/cache", func(c *gin.Context) { handleSetCache(c, deps.SettingsService) })
-		api.DELETE("/cache", func(c *gin.Context) { handleClearCache(c, deps.CacheService) })
-		api.GET("/cache/stats", func(c *gin.Context) { handleCacheStats(c, deps.SettingsService, deps.CacheService) })
+		protectedAPI.GET("/settings/cache", func(c *gin.Context) { handleGetCache(c, deps.SettingsService) })
+		protectedAPI.PUT("/settings/cache", func(c *gin.Context) { handleSetCache(c, deps.SettingsService) })
+		protectedAPI.DELETE("/cache", func(c *gin.Context) { handleClearCache(c, deps.CacheService) })
+		protectedAPI.GET("/cache/stats", func(c *gin.Context) { handleCacheStats(c, deps.SettingsService, deps.CacheService) })
 	}
 
 	r.NoRoute(func(c *gin.Context) {
@@ -120,15 +132,23 @@ func NewRouter(deps Dependencies) http.Handler {
 	return r
 }
 
-func masterAuthMiddleware(master *services.MasterKeyService) gin.HandlerFunc {
+func managementAuthMiddleware(admin *services.AdminAuthService, master *services.MasterKeyService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := parseBearerToken(c.GetHeader("Authorization"))
-		if !master.Authenticate(token) {
-			respondUnauthorized(c)
-			c.Abort()
-			return
+		if admin != nil {
+			if admin.AuthenticateToken(token, time.Now()) {
+				c.Next()
+				return
+			}
+		} else if master != nil {
+			if master.Authenticate(token) {
+				c.Next()
+				return
+			}
 		}
-		c.Next()
+
+		respondUnauthorized(c)
+		c.Abort()
 	}
 }
 
@@ -148,6 +168,119 @@ func parseBearerToken(authHeader string) string {
 		return ""
 	}
 	return strings.TrimSpace(parts[1])
+}
+
+func handleAdminLogin(c *gin.Context, admin *services.AdminAuthService) {
+	if admin == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "admin_auth_unavailable"})
+		return
+	}
+
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+		return
+	}
+	if !admin.AuthenticateCredentials(body.Username, body.Password) {
+		respondUnauthorized(c)
+		return
+	}
+
+	token, expiresAt, err := admin.IssueToken(time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "token_issue_failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"token":      token,
+		"token_type": "Bearer",
+		"expires_at": expiresAt.UTC().Format(time.RFC3339),
+	})
+}
+
+func handleAdminLogout(c *gin.Context, admin *services.AdminAuthService) {
+	if admin != nil {
+		token := parseBearerToken(c.GetHeader("Authorization"))
+		admin.RevokeToken(token)
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func handleGetAuthSettings(c *gin.Context, master *services.MasterKeyService, admin *services.AdminAuthService) {
+	if master == nil || admin == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "auth_settings_unavailable"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"master_key":     master.Get(),
+		"admin_username": admin.CurrentUsername(),
+	})
+}
+
+func handleSetAuthSettings(c *gin.Context, master *services.MasterKeyService, admin *services.AdminAuthService, settings *services.SettingsService) {
+	if master == nil || admin == nil || settings == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "auth_settings_unavailable"})
+		return
+	}
+
+	var body struct {
+		MasterKey     *string `json:"master_key"`
+		AdminUsername *string `json:"admin_username"`
+		AdminPassword *string `json:"admin_password"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+		return
+	}
+	if body.MasterKey == nil && body.AdminUsername == nil && body.AdminPassword == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_fields"})
+		return
+	}
+
+	if body.MasterKey != nil {
+		if err := master.Set(c.Request.Context(), *body.MasterKey); err != nil {
+			if errors.Is(err, services.ErrMasterKeyRequired) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_master_key"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+			}
+			return
+		}
+	}
+
+	credentialsChanged := false
+	if body.AdminUsername != nil {
+		beforeUsername := admin.CurrentUsername()
+		if err := admin.SetUsername(*body.AdminUsername); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_admin_username"})
+			return
+		}
+		credentialsChanged = credentialsChanged || admin.CurrentUsername() != beforeUsername
+	}
+	if body.AdminPassword != nil {
+		if err := admin.SetPassword(*body.AdminPassword); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_admin_password"})
+			return
+		}
+		credentialsChanged = true
+	}
+	if credentialsChanged {
+		if err := settings.Set(c.Request.Context(), services.SettingAdminUsername, admin.CurrentUsername()); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+			return
+		}
+		if err := settings.Set(c.Request.Context(), services.SettingAdminPasswordHash, admin.PasswordHashHex()); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+			return
+		}
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 func acceptsHTML(r *http.Request) bool {

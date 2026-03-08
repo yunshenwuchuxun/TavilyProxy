@@ -1,9 +1,9 @@
 # Stage 1: Build the frontend
 FROM node:20-alpine AS frontend-builder
 WORKDIR /web
-COPY web/package*.json ./
-RUN npm install
-COPY web/ .
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
 RUN npm run build
 
 # Stage 2: Build the backend
@@ -11,21 +11,19 @@ FROM golang:1.23-alpine AS backend-builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
-COPY . .
-# Remove existing public files and copy built frontend
-RUN rm -rf server/public/*
+COPY server/ ./server/
+RUN rm -rf server/public && mkdir -p server/public
 COPY --from=frontend-builder /web/dist/ server/public/
-RUN go build -o tavily-proxy server/main.go
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tavily-proxy ./server
 
 # Stage 3: Final image
-FROM alpine:latest
+FROM alpine:3.20
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
-COPY --from=backend-builder /app/tavily-proxy .
+COPY --from=backend-builder /out/tavily-proxy ./tavily-proxy
 
 VOLUME /app/data
 ENV DATABASE_PATH=/app/data/proxy.db
-ENV LISTEN_ADDR=:8080
 
 EXPOSE 8080
 
