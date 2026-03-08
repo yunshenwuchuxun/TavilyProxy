@@ -14,6 +14,11 @@
 
 一个透明的 Tavily API 反向代理：将多个 Tavily API Key（额度/credits）汇聚在一个 **Master Key** 之后，并提供内置 Web UI 用于管理 Key、用量与请求日志。
 
+> **快速区分**
+> - **管理面板登录**：首次登录默认是 `admin / admin`；如果你在首次启动前设置了 `ADMIN_USERNAME` / `ADMIN_PASSWORD`，或数据库里已经保存过管理员凭据，则以那些值为准。
+> - **Master Key**：用于 `/search`、`/extract`、`/crawl`、`/mcp` 等代理调用，**不用于管理面板登录**。
+> - **Tavily 官方 API Key**：登录管理面板后添加到 Key 池里，代理会自动挑选并转发到 Tavily 上游。
+
 参考项目：`xuncv/TavilyProxyManager`：<https://github.com/xuncv/TavilyProxyManager>
 
 ---
@@ -87,21 +92,25 @@ docker run -d \
   ghcr.io/xuncv/tavilyproxymanager:latest
 ```
 
-### 3. 使用 Render Blueprint（一键部署）
+### 3. 使用 Render Blueprint（一键部署，免费实例）
 
 仓库根目录已提供 `render.yaml`，推送到 GitHub 后即可直接在 Render 中按 Blueprint 部署。
 
 1. 将仓库推送到 GitHub（建议使用公开仓库，或给 Render GitHub App 授权私有仓库访问）。
 2. 打开 Render 控制台，选择 **New > Blueprint**。
 3. 选择你的仓库并批准 `render.yaml` 中的服务配置。
-4. 首次创建时，Render 会提示填写 `ADMIN_PASSWORD`；`ADMIN_USERNAME` 默认为 `admin`。
-5. 部署完成后，访问 Render 分配的 `onrender.com` 地址。
+4. 选择 **Free** 实例类型。
+5. 首次创建时，Render 会提示填写 `ADMIN_PASSWORD`；`ADMIN_USERNAME` 默认为 `admin`，因此首次登录管理面板通常是 `admin / 你填写的密码`。
+6. 部署完成后，访问 Render 分配的 `onrender.com` 地址。
 
 Render 部署说明：
 
-- `DATABASE_PATH` 会写入 `/var/data/proxy.db`，并通过 Persistent Disk 持久化。
-- 由于项目当前使用 SQLite，Render 上必须挂载 Persistent Disk；没有磁盘时，重启或重新部署会丢失数据。
-- Render 的 Persistent Disk 仅适用于付费 Web Service，因此 `render.yaml` 默认使用 `starter` 计划。
+- `render.yaml` 现在默认使用 **Free** 实例类型，适合预览、演示和轻量自用。
+- Render Free Web Service **不支持 Persistent Disk**，而当前项目使用 SQLite；因此服务重启、重新部署或 Free 实例被平台重建后，运行期数据可能丢失。
+- 可能丢失的数据包括：已添加的 Tavily Key、请求日志、缓存、Master Key、以及保存在数据库中的自定义设置。
+- 由于 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 由环境变量初始化，所以只要你在 Render 中保留这些环境变量，管理面板账号密码通常仍然可预测；但其他数据库内容不能保证保留。
+- Render Free Web Service 约 15 分钟无流量后会休眠，下一次访问会有冷启动延迟。
+- 如果你需要稳定持久化数据，建议后续改用付费实例并挂载 Persistent Disk，或将存储层从 SQLite 升级为外部数据库。
 - `render.yaml` 将 `autoDeployTrigger` 设为 `off`，更适合 README 中的“一键部署”场景，避免你后续 push 代码时把所有通过按钮创建的实例都自动重部署。如果你部署的是自己的 fork，可在 Render 面板中改为 `On Commit`。
 
 如果你之后修改了仓库名，请同步替换 Deploy to Render 按钮中的仓库地址：
@@ -112,9 +121,21 @@ Render 部署说明：
 
 ---
 
-## 🔑 首次运行：获取 Master Key
+## 🔑 首次运行：登录与鉴权
 
-服务在**首次启动**时会自动生成一个随机的 **Master Key**，它用于后续代理 REST API 和 MCP 调用。管理面板登录使用另一套管理员用户名和密码。
+首次启动后，你通常需要先完成三件事：登录管理面板、添加 Tavily Key、保存 Master Key。
+
+### 1. 登录管理面板
+
+- 对于**全新数据库**，如果你没有在首次启动前设置 `ADMIN_USERNAME` / `ADMIN_PASSWORD`，默认账号密码是 `admin / admin`。
+- 如果你在首次启动前设置了 `ADMIN_USERNAME` / `ADMIN_PASSWORD`，则首次登录使用你设置的值。
+- 管理员凭据会在初始化后持久化到数据库中；后续再修改环境变量，**不会覆盖**已有数据库中的管理员账号密码。
+
+### 2. 获取 Master Key
+
+服务在**首次启动**时会自动生成一个随机的 **Master Key**。它用于后续代理 REST API 和 MCP 调用，**不用于管理面板登录**。
+
+如果你部署在 Render Free 实例上，请特别注意：由于数据库默认不持久化，`Master Key` 可能会在服务重建或重新部署后变化。
 
 您可以通过以下命令查看控制台日志来获取它：
 
@@ -125,9 +146,12 @@ docker logs tavily-proxy 2>&1 | grep "master key"
 **日志示例：**
 `time=2026-03-08T15:16:50.725+08:00 level=INFO msg="generated master key" master_key=your_generated_master_key_here`
 
-对于全新的本地手动启动，如果您没有在首次启动前设置 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD`，管理面板默认账号密码为 `admin` / `admin`。
+### 3. 首次使用建议顺序
 
-管理员凭据会在初始化后持久化到数据库中，因此后续再修改这些环境变量，并不会覆盖已有数据库里的登录信息。
+1. 打开管理面板并使用管理员账号密码登录。
+2. 在 Key 管理页面添加一个或多个 Tavily 官方 API Key。
+3. 在设置页保存好 `Master Key`。
+4. 使用 `Master Key` 调用 `/search`、`/extract`、`/crawl` 或 `/mcp`。
 
 > **提示**：请将 Master Key 用于 API 客户端调用，并将管理员用户名/密码单独保存用于管理面板登录。
 
@@ -148,6 +172,8 @@ docker logs tavily-proxy 2>&1 | grep "master key"
 
 默认情况下，从仓库根目录执行 `go run ./server` 会把数据写入 `server/data/app.db`。
 Docker 示例则使用挂载到 `/app/data/proxy.db` 的 `./data`，因此本地手动运行和 Docker 运行默认不会共享同一套凭据，除非您显式指定同一个数据库文件。
+
+Render Free 实例没有 Persistent Disk，因此它更接近“临时环境 / 预览环境”，而不是长期稳定运行环境。
 
 如果你想在本地模拟 Render 的数据目录，可以显式指定：
 
@@ -230,7 +256,7 @@ curl -X POST "http://localhost:8080/search" \
 | `ADMIN_SESSION_TTL`| 管理员会话有效期     | `24h`                    |
 | `LOG_LEVEL`        | 日志级别             | `info`                   |
 
-> Docker 镜像默认会将 `DATABASE_PATH` 设置为 `/app/data/proxy.db`；Render Blueprint 会将其设置为 `/var/data/proxy.db`。
+> Docker 镜像默认会将 `DATABASE_PATH` 设置为 `/app/data/proxy.db`；当前 Render Free Blueprint 不挂载磁盘，因此数据库使用容器内的临时文件系统。
 
 ---
 

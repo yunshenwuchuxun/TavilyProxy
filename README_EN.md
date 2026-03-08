@@ -1,6 +1,6 @@
 # Tavily Proxy & Management Dashboard
 
-简体中文 | English
+[简体中文](./README.md) | English
 
 > The links below assume the repository path will be `yunshenwuchuxun/TavilyProxy`. If you publish under a different repo name, update the links accordingly.
 
@@ -13,6 +13,11 @@
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/yunshenwuchuxun/TavilyProxy)
 
 A transparent reverse proxy for the Tavily API that aggregates multiple Tavily API Keys into a single **Master Key**. It features a built-in Web UI for managing keys, monitoring usage, and inspecting request logs.
+
+> **Quick distinction**
+> - **Dashboard login**: the first login defaults to `admin / admin` if you did not set `ADMIN_USERNAME` / `ADMIN_PASSWORD` before first startup and the database does not already contain saved admin credentials.
+> - **Master Key**: used for `/search`, `/extract`, `/crawl`, `/mcp`, and other proxied calls. It is **not** used for dashboard login.
+> - **Official Tavily API Keys**: add them in the dashboard after logging in; the proxy will use them for upstream Tavily requests.
 
 Reference project: `xuncv/TavilyProxyManager`: <https://github.com/xuncv/TavilyProxyManager>
 
@@ -87,21 +92,25 @@ docker run -d \
   ghcr.io/xuncv/tavilyproxymanager:latest
 ```
 
-### 3. Deploy with Render Blueprint (one-click)
+### 3. Deploy with Render Blueprint (one-click, Free instance)
 
 The repository root now includes a `render.yaml`, so after you push the repo to GitHub you can deploy it directly on Render with a Blueprint.
 
 1. Push this repository to GitHub.
 2. In the Render Dashboard, choose **New > Blueprint**.
 3. Select your repository and approve the service defined in `render.yaml`.
-4. During the initial creation flow, Render will prompt you for `ADMIN_PASSWORD`; `ADMIN_USERNAME` defaults to `admin`.
-5. Once the deploy is live, open the generated `onrender.com` URL.
+4. Choose the **Free** instance type.
+5. During the initial creation flow, Render will prompt you for `ADMIN_PASSWORD`; `ADMIN_USERNAME` defaults to `admin`, so the first dashboard login is usually `admin / <your password>`.
+6. Once the deploy is live, open the generated `onrender.com` URL.
 
 Render-specific notes:
 
-- `DATABASE_PATH` is set to `/var/data/proxy.db` and persisted with a disk.
-- Because the project currently uses SQLite, Render needs a Persistent Disk. Without it, data would be lost on restart or redeploy.
-- Render Persistent Disks require a paid web service, so `render.yaml` defaults to the `starter` plan.
+- `render.yaml` now defaults to the **Free** instance type, which is suitable for previews, demos, and lightweight personal use.
+- Render Free web services **do not support Persistent Disks**, and this project currently uses SQLite. That means runtime data can be lost whenever the service restarts, redeploys, or is rebuilt by the platform.
+- Data that can be lost includes added Tavily keys, request logs, cache contents, the generated Master Key, and database-backed settings.
+- Because `ADMIN_USERNAME` / `ADMIN_PASSWORD` are initialized from environment variables, the dashboard login usually remains predictable as long as you keep those env vars configured in Render; other database data does not.
+- Free Render web services spin down after about 15 minutes of inactivity, so the next request may experience a cold start delay.
+- If you need durable state, move to a paid instance with a Persistent Disk later, or upgrade the app to use an external database instead of SQLite.
 - `render.yaml` sets `autoDeployTrigger: off`, which is safer for public “Deploy to Render” flows so future pushes to your repo do not redeploy every instance created from the button. If you are deploying your own fork, you can switch Auto-Deploy to `On Commit` in Render after creation.
 
 If you later rename the repository, update the Deploy to Render button URL as well:
@@ -112,9 +121,21 @@ If you later rename the repository, update the Deploy to Render button URL as we
 
 ---
 
-## 🔑 First Run: Obtaining the Master Key
+## 🔑 First Run: Login and Authentication
 
-The service automatically generates a random **Master Key** during its **first startup**. Use this key to authenticate proxied REST API and MCP calls. Dashboard login uses a separate admin username and password.
+After the first startup, you typically need to do three things: sign in to the dashboard, add Tavily keys, and save the Master Key.
+
+### 1. Sign in to the dashboard
+
+- For a **fresh database**, if you did not set `ADMIN_USERNAME` / `ADMIN_PASSWORD` before first startup, the default dashboard credentials are `admin / admin`.
+- If you did set `ADMIN_USERNAME` / `ADMIN_PASSWORD` before first startup, use those values for the first login.
+- Admin credentials are persisted to the database after initialization, so changing those environment variables later will **not override** an existing database.
+
+### 2. Obtain the Master Key
+
+The service automatically generates a random **Master Key** during its **first startup**. Use this key for proxied REST API and MCP calls. It is **not** used for dashboard login.
+
+If you deploy on a Render Free instance, note that the `Master Key` can change after a rebuild or redeploy because the database is not persisted by default.
 
 You can retrieve it by checking the container logs:
 
@@ -125,9 +146,12 @@ docker logs tavily-proxy 2>&1 | grep "master key"
 **Log Example:**
 `time=2026-03-08T15:16:50.725+08:00 level=INFO msg="generated master key" master_key=your_generated_master_key_here`
 
-For a fresh local/manual startup, the dashboard defaults to `admin` / `admin` unless you set `ADMIN_USERNAME` and `ADMIN_PASSWORD` before first launch.
+### 3. Recommended first-use flow
 
-Admin credentials are persisted in the database after initialization, so changing those environment variables later will not override an existing database.
+1. Open the dashboard and sign in with the admin username/password.
+2. Add one or more official Tavily API keys in Key Management.
+3. Save the `Master Key` from the settings page.
+4. Use the `Master Key` for `/search`, `/extract`, `/crawl`, or `/mcp`.
 
 > **Tip**: Save the Master Key for API clients, and save the admin username/password separately for dashboard access.
 
@@ -148,6 +172,8 @@ If you need to modify the code and build it yourself:
 
 By default, running `go run ./server` from the repository root stores data in `server/data/app.db`.
 The Docker examples use `./data` mounted to `/app/data/proxy.db`, so local manual runs and Docker runs do not share credentials unless you point them at the same database file.
+
+Render Free instances do not provide a Persistent Disk, so treat that deployment mode as a temporary or preview environment rather than a durable production setup.
 
 If you want local data to match the Render-style path layout, you can run:
 
@@ -230,7 +256,7 @@ If you need stateful sessions, set `MCP_STATELESS=false` and ensure your reverse
 | `ADMIN_SESSION_TTL`| Admin session lifetime   | `24h`                    |
 | `LOG_LEVEL`        | Log level                | `info`                   |
 
-> The Docker image sets `DATABASE_PATH=/app/data/proxy.db` by default, and the Render Blueprint overrides it to `/var/data/proxy.db`.
+> The Docker image sets `DATABASE_PATH=/app/data/proxy.db` by default. The current Render Free Blueprint does not mount a disk, so the database lives on the container's ephemeral filesystem.
 
 ---
 

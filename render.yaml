@@ -2,14 +2,12 @@ services:
   - type: web
     name: tavily-proxy
     runtime: docker
-    plan: starter
+    plan: free
     dockerfilePath: ./Dockerfile
     dockerContext: .
     autoDeployTrigger: off
     healthCheckPath: /healthz
     envVars:
-      - key: DATABASE_PATH
-        value: /var/data/proxy.db
       - key: TAVILY_BASE_URL
         value: https://api.tavily.com
       - key: UPSTREAM_TIMEOUT
@@ -22,7 +20,3 @@ services:
         value: admin
       - key: ADMIN_PASSWORD
         sync: false
-    disk:
-      name: data
-      mountPath: /var/data
-      sizeGB: 1
