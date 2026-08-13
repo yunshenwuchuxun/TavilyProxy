@@ -1,3 +1,6 @@
+
+</think>
+
 # Tavily 代理池 & 管理面板
 
 简体中文 | [English](./README_EN.md)
@@ -231,7 +234,7 @@ curl -X POST "http://localhost:8080/search" \
         "mcp-remote",
         "http://localhost:8080/mcp",
         "--header",
-        "Authorization: Bearer 您的_MASTER_KEY"
+        "Authorization: Bearer YOUR_MASTER_KEY"
       ]
     }
   }
